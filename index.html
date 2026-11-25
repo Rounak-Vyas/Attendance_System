@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Smart Attendance Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-black text-neutral-100 min-h-screen font-sans">
+  <div class="max-w-6xl mx-auto p-6 space-y-6">
+
+    <!-- Header & Mode Switcher -->
+    <div class="flex flex-wrap items-center justify-between gap-4 border-b border-neutral-800 pb-4">
+      <div>
+        <h1 class="text-2xl font-semibold tracking-tight text-white">Smart Attendance Monitor</h1>
+        <p class="text-sm text-neutral-400">ESP32-S3 + OV7670 • Local InsightFace Engine</p>
+      </div>
+      <div class="flex items-center gap-2 bg-neutral-900 p-1 rounded-lg border border-neutral-800">
+        <button id="btn-detection" onclick="switchMode('detection')"
+          class="px-4 py-2 text-sm font-medium rounded-md transition">
+          Detection Mode
+        </button>
+        <button id="btn-enrollment" onclick="switchMode('enrollment')"
+          class="px-4 py-2 text-sm font-medium rounded-md transition">
+          New User Entry
+        </button>
+      </div>
+    </div>
+
+    <!-- Main Grid: Live Feed + Control Panel -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+      <!-- Camera Feed -->
+      <div class="lg:col-span-2 bg-neutral-950 border border-neutral-800 rounded-xl overflow-hidden">
+        <div class="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-neutral-800">
+          <div class="flex items-center gap-3">
+            <span class="text-sm font-medium text-neutral-300">Live Camera Stream</span>
+            <span id="metrics-pill" class="text-xs font-mono px-2.5 py-0.5 rounded bg-neutral-900 text-neutral-400">
+              Connecting...
+            </span>
+          </div>
+          <div id="led-badge" class="flex items-center gap-2 text-xs font-medium px-3 py-1 rounded-full bg-neutral-900 text-neutral-400">
+            <span id="led-dot" class="w-2.5 h-2.5 rounded-full bg-neutral-600"></span>
+            <span id="led-text">LEDs Off</span>
+          </div>
+        </div>
+        <div class="aspect-[4/3] bg-black flex items-center justify-center">
+          <img id="video-frame" alt="Waiting for camera stream..." class="w-full h-full object-contain" />
+        </div>
+      </div>
+
+      <!-- Right Panel -->
+      <div class="bg-neutral-950 border border-neutral-800 rounded-xl p-5 flex flex-col justify-between">
+
+        <!-- Detection Mode Panel -->
+        <div id="panel-detection" class="space-y-4">
+          <h2 class="text-sm uppercase tracking-wider text-neutral-400 font-semibold">Live Status</h2>
+          <div id="status-card" class="p-5 rounded-xl border border-neutral-800 bg-neutral-900/50 space-y-2">
+            <p id="status-title" class="text-xl font-semibold text-neutral-300">Waiting for face...</p>
+            <p id="status-sub" class="text-sm text-neutral-500">Stand in front of the camera</p>
+            <p id="status-conf" class="text-xs text-neutral-500 pt-2"></p>
+          </div>
+        </div>
+
+        <!-- Enrollment Mode Panel -->
+        <div id="panel-enrollment" class="hidden space-y-4">
+          <h2 class="text-sm uppercase tracking-wider text-amber-400 font-semibold">New User Entry</h2>
+          <p class="text-xs text-neutral-400">
+            Look directly at the camera until the yellow box appears, then click Register.
+          </p>
+          <div class="space-y-3">
+            <div>
+              <label class="block text-xs text-neutral-400 mb-1">Full Name</label>
+              <input id="input-name" type="text" placeholder="e.g. Rounak Vyas"
+                class="w-full px-3 py-2 rounded-lg bg-neutral-900 border border-neutral-700 text-white text-sm focus:outline-none focus:border-white" />
+            </div>
+            <div>
+              <label class="block text-xs text-neutral-400 mb-1">ID / Roll Number</label>
+              <input id="input-code" type="text" placeholder="e.g. 1NT23EE045"
+                class="w-full px-3 py-2 rounded-lg bg-neutral-900 border border-neutral-700 text-white text-sm focus:outline-none focus:border-white" />
+            </div>
+            <button id="btn-register" onclick="enrollUser()"
+              class="w-full py-2.5 rounded-lg bg-white text-black font-semibold text-sm hover:bg-neutral-200 transition disabled:opacity-40">
+              Capture & Register Face
+            </button>
+            <p id="enroll-msg" class="text-xs text-center min-h-[1rem]"></p>
+          </div>
+        </div>
+
+        <!-- Registered Users Summary -->
+        <div class="pt-6 border-t border-neutral-800 mt-6">
+          <div class="flex justify-between items-center mb-2">
+            <h3 class="text-xs uppercase tracking-wider text-neutral-400 font-semibold">Registered Users</h3>
+            <span id="user-count" class="text-xs text-neutral-500">0</span>
+          </div>
+          <div id="users-list" class="space-y-1.5 max-h-40 overflow-y-auto pr-1 text-sm"></div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Attendance Logs Table -->
+    <div class="bg-neutral-950 border border-neutral-800 rounded-xl overflow-hidden">
+      <div class="px-5 py-3 border-b border-neutral-800 flex justify-between items-center">
+        <h2 class="text-sm font-semibold text-neutral-200">Recent Attendance Logs</h2>
+        <span class="text-xs text-neutral-500">60s duplicate cooldown active</span>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-sm">
+          <thead class="bg-neutral-900/70 text-xs uppercase text-neutral-400">
+            <tr>
+              <th class="px-5 py-3">Timestamp</th>
+              <th class="px-5 py-3">Name</th>
+              <th class="px-5 py-3">ID / Code</th>
+              <th class="px-5 py-3">Match Score</th>
+            </tr>
+          </thead>
+          <tbody id="logs-body" class="divide-y divide-neutral-800/80 text-neutral-300"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    let lastUsersJson = "";
+    let lastLogsJson = "";
+
+    async function switchMode(mode) {
+      await fetch("/api/mode", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode }),
+      });
+    }
+
+    async function enrollUser() {
+      const name = document.getElementById("input-name").value.trim();
+      const user_code = document.getElementById("input-code").value.trim();
+      const msg = document.getElementById("enroll-msg");
+      msg.textContent = "Registering...";
+      msg.className = "text-xs text-center text-neutral-400";
+
+      const res = await fetch("/api/enroll", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, user_code }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        msg.textContent = data.message;
+        msg.className = "text-xs text-center text-emerald-400";
+        document.getElementById("input-name").value = "";
+        document.getElementById("input-code").value = "";
+      } else {
+        msg.textContent = data.detail || "Enrollment failed";
+        msg.className = "text-xs text-center text-red-400";
+      }
+    }
+
+    async function deleteUser(id) {
+      await fetch(`/api/users/${id}`, { method: "DELETE" });
+    }
+
+    function updateUI(data) {
+      // 1. Paint synchronized frame
+      if (data.frame) {
+        document.getElementById("video-frame").src = "data:image/jpeg;base64," + data.frame;
+      }
+
+      // 2. Metrics
+      if (data.metrics) {
+        document.getElementById("metrics-pill").textContent =
+          `${data.metrics.fps.toFixed(1)} FPS • AI ${data.metrics.infer_ms} ms • ${data.metrics.provider}`;
+      }
+
+      // 3. Mode toggle
+      const isDet = data.mode === "detection";
+      document.getElementById("btn-detection").className = isDet
+        ? "px-4 py-2 text-sm font-medium rounded-md bg-white text-black"
+        : "px-4 py-2 text-sm font-medium rounded-md text-neutral-400 hover:text-white";
+      document.getElementById("btn-enrollment").className = !isDet
+        ? "px-4 py-2 text-sm font-medium rounded-md bg-amber-400 text-black"
+        : "px-4 py-2 text-sm font-medium rounded-md text-neutral-400 hover:text-white";
+
+      document.getElementById("panel-detection").classList.toggle("hidden", !isDet);
+      document.getElementById("panel-enrollment").classList.toggle("hidden", isDet);
+
+      // 4. LED badge
+      const s = data.status;
+      const ledDot = document.getElementById("led-dot");
+      const ledText = document.getElementById("led-text");
+      if (s.led === "G") {
+        ledDot.className = "w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping";
+        ledText.textContent = "Green LED Blinking";
+      } else if (s.led === "R") {
+        ledDot.className = "w-2.5 h-2.5 rounded-full bg-red-500";
+        ledText.textContent = "Red LED Solid";
+      } else {
+        ledDot.className = "w-2.5 h-2.5 rounded-full bg-neutral-600";
+        ledText.textContent = "LEDs Off";
+      }
+
+      // 5. Detection Card
+      const card = document.getElementById("status-card");
+      const title = document.getElementById("status-title");
+      const sub = document.getElementById("status-sub");
+      const conf = document.getElementById("status-conf");
+
+      if (s.state === "matched") {
+        card.className = "p-5 rounded-xl border border-emerald-500/40 bg-emerald-950/30 space-y-2";
+        title.textContent = s.name;
+        title.className = "text-xl font-semibold text-emerald-400";
+        sub.textContent = `ID: ${s.user_code} • Access Verified`;
+        conf.textContent = `Similarity Score: ${(s.confidence * 100).toFixed(1)}%`;
+      } else if (s.state === "unknown") {
+        card.className = "p-5 rounded-xl border border-red-500/40 bg-red-950/30 space-y-2";
+        title.textContent = "Unrecognized Face";
+        title.className = "text-xl font-semibold text-red-400";
+        sub.textContent = "No matching record in database";
+        conf.textContent = s.confidence > 0 ? `Closest Score: ${(s.confidence * 100).toFixed(1)}%` : "";
+      } else {
+        card.className = "p-5 rounded-xl border border-neutral-800 bg-neutral-900/50 space-y-2";
+        title.textContent = "Waiting for face...";
+        title.className = "text-xl font-semibold text-neutral-300";
+        sub.textContent = "Stand in front of the camera";
+        conf.textContent = "";
+      }
+
+      document.getElementById("btn-register").disabled = !s.face_detected;
+
+      // 6. Only re-render users & logs when they actually change
+      const usersJson = JSON.stringify(data.users);
+      if (usersJson !== lastUsersJson) {
+        lastUsersJson = usersJson;
+        document.getElementById("user-count").textContent = data.users.length;
+        document.getElementById("users-list").innerHTML = data.users.map(u => `
+          <div class="flex items-center justify-between bg-neutral-900 px-3 py-1.5 rounded-md">
+            <div>
+              <span class="font-medium text-neutral-200">${u.name}</span>
+              <span class="text-xs text-neutral-500 ml-1.5">${u.user_code}</span>
+            </div>
+            <button onclick="deleteUser(${u.id})" class="text-xs text-neutral-500 hover:text-red-400">Remove</button>
+          </div>
+        `).join("") || `<p class="text-xs text-neutral-600">No users enrolled yet.</p>`;
+      }
+
+      const logsJson = JSON.stringify(data.logs);
+      if (logsJson !== lastLogsJson) {
+        lastLogsJson = logsJson;
+        document.getElementById("logs-body").innerHTML = data.logs.map(l => `
+          <tr>
+            <td class="px-5 py-2.5 text-neutral-400 font-mono text-xs">${l.timestamp}</td>
+            <td class="px-5 py-2.5 font-medium text-white">${l.name}</td>
+            <td class="px-5 py-2.5 text-neutral-400">${l.user_code}</td>
+            <td class="px-5 py-2.5 text-emerald-400">${(l.confidence * 100).toFixed(1)}%</td>
+          </tr>
+        `).join("") || `<tr><td colspan="4" class="px-5 py-6 text-center text-neutral-600">No attendance records yet.</td></tr>`;
+      }
+    }
+
+    function connectWS() {
+      const ws = new WebSocket(`ws://${location.host}/ws`);
+      ws.onmessage = (e) => updateUI(JSON.parse(e.data));
+      ws.onclose = () => {
+        document.getElementById("metrics-pill").textContent = "Reconnecting...";
+        setTimeout(connectWS, 1500);
+      };
+    }
+    connectWS();
+  </script>
+</body>
+</html>
